@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
 
+    realtime_interval_seconds: float = 1.0
+    anomaly_threshold: float = 80.0
+
     @property
     def database_url(self) -> str:
         return (

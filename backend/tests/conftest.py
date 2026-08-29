@@ -2,6 +2,8 @@ import os
 
 # Settings require a JWT secret; supply a throwaway one before app modules load.
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-not-used-outside-tests")
+# Keep the realtime loop fast so tests never wait a real second.
+os.environ.setdefault("REALTIME_INTERVAL_SECONDS", "0.01")
 
 import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402

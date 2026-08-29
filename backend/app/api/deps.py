@@ -38,6 +38,30 @@ async def get_current_user(
     return user
 
 
+async def get_user_from_token(
+    token: str | None, session: AsyncSession
+) -> User | None:
+    """Resolve a raw token to an active user, or None.
+
+    Used by the WebSocket handshake, which cannot raise HTTP exceptions and
+    must close the socket instead.
+    """
+    if not token:
+        return None
+
+    try:
+        claims = decode_access_token(token)
+        user_id = int(claims["sub"])
+    except (jwt.PyJWTError, KeyError, TypeError, ValueError):
+        return None
+
+    user = await user_crud.get_by_id(session, user_id)
+    if user is None or not user.is_active:
+        return None
+
+    return user
+
+
 class RequireRoles:
     """Dependency allowing only the listed roles through.
 
