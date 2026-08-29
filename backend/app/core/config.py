@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     db_max_overflow: int = 5
     db_pool_recycle: int = 1800
 
+    # No default: the application must refuse to start without a real secret.
+    jwt_secret_key: str
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60
+
     @property
     def database_url(self) -> str:
         return (
