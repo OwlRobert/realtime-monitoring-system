@@ -9,6 +9,18 @@ from app.core.tokens import create_access_token, decode_access_token
 SUBJECT = 42
 
 
+def tamper_signature(token: str) -> str:
+    """Alter a token's signature.
+
+    The first base64url character is changed because it carries six full
+    bits; the last character carries only two, so changing it can decode to
+    the same signature bytes.
+    """
+    header, payload, signature = token.split(".")
+    replacement = "B" if signature[0] != "B" else "C"
+    return f"{header}.{payload}.{replacement}{signature[1:]}"
+
+
 def test_created_token_can_be_decoded():
     payload = decode_access_token(create_access_token(SUBJECT))
 
@@ -45,11 +57,8 @@ def test_tampered_payload_is_rejected():
 
 
 def test_tampered_signature_is_rejected():
-    token = create_access_token(SUBJECT)
-    tampered = token[:-1] + ("A" if token[-1] != "A" else "B")
-
-    with pytest.raises(jwt.PyJWTError):
-        decode_access_token(tampered)
+    with pytest.raises(jwt.InvalidSignatureError):
+        decode_access_token(tamper_signature(create_access_token(SUBJECT)))
 
 
 def test_token_signed_with_another_secret_is_rejected():
