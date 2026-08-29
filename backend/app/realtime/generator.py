@@ -4,6 +4,7 @@ import random
 from datetime import datetime, timezone
 
 from app.core.config import get_settings
+from app.realtime.buffer import RealtimePersistenceBuffer
 from app.realtime.manager import ConnectionManager, manager as default_manager
 from app.schemas.realtime import RealtimeReading
 
@@ -33,11 +34,15 @@ def generate_reading(
     )
 
 
-async def run_generator(connections: ConnectionManager | None = None) -> None:
-    """Emit one reading per interval and broadcast it immediately.
+async def run_generator(
+    connections: ConnectionManager | None = None,
+    buffer: RealtimePersistenceBuffer | None = None,
+) -> None:
+    """Emit one reading per interval, broadcast it, then buffer it.
 
-    Nothing is persisted here; batch persistence arrives in a later step.
-    Runs until cancelled by the application lifespan.
+    Buffering is an in-memory append, so delivery never waits on the
+    database. Writing is the flusher's job. Runs until cancelled by the
+    application lifespan.
     """
     settings = get_settings()
     connections = connections or default_manager
@@ -51,7 +56,10 @@ async def run_generator(connections: ConnectionManager | None = None) -> None:
         while True:
             try:
                 reading = generate_reading(threshold=settings.anomaly_threshold)
+                # Delivery first, persistence second.
                 await connections.broadcast(reading.model_dump(mode="json"))
+                if buffer is not None:
+                    await buffer.add(reading)
             except Exception:  # noqa: BLE001 - one bad tick must not stop the loop
                 logger.exception("Realtime generator tick failed")
 

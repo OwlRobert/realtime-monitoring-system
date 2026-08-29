@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     realtime_interval_seconds: float = 1.0
     anomaly_threshold: float = 80.0
 
+    batch_size: int = 10
+    batch_interval_seconds: float = 5.0
+
     @property
     def database_url(self) -> str:
         return (

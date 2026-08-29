@@ -4,11 +4,14 @@ import os
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-not-used-outside-tests")
 # Keep the realtime loop fast so tests never wait a real second.
 os.environ.setdefault("REALTIME_INTERVAL_SECONDS", "0.01")
+# The app-wide buffer must never reach a flush trigger during WebSocket
+# tests; buffer behaviour is tested directly with its own configuration.
+os.environ.setdefault("BATCH_SIZE", "1000000")
+os.environ.setdefault("BATCH_INTERVAL_SECONDS", "3600")
 
 import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
-from sqlalchemy.pool import StaticPool  # noqa: E402
 
 from app.db.base import Base  # noqa: E402
 from app.db.session import get_session  # noqa: E402
@@ -17,13 +20,14 @@ from app.models import User  # noqa: E402  (registers the table on Base.metadata
 
 
 @pytest.fixture
-async def session_factory():
-    """A fresh in-memory database per test, created from the ORM metadata."""
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+async def session_factory(tmp_path):
+    """A fresh database per test, created from the ORM metadata.
+
+    File-backed rather than in-memory: a connection invalidated mid-test
+    (for instance by cancelling a flush) would otherwise reopen an empty
+    in-memory database and lose the schema.
+    """
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/test.db")
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
 
