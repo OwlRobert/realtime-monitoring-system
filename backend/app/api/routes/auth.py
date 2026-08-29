@@ -6,11 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import get_current_user
 from app.core.security import hash_password, verify_password
 from app.core.tokens import create_access_token
 from app.crud import user as user_crud
 from app.db.session import get_session
-from app.models.user import UserRole
+from app.models.user import User, UserRole
 from app.schemas.auth import LoginRequest, TokenResponse
 from app.schemas.user import UserCreate, UserRead
 
@@ -96,3 +97,16 @@ async def login(
 
     logger.info("User id=%s logged in", user.id)
     return TokenResponse(access_token=create_access_token(user.id))
+
+
+@router.get(
+    "/me",
+    response_model=UserRead,
+    summary="Current authenticated user",
+    responses={401: {"description": "Missing, invalid or expired credentials."}},
+)
+async def read_current_user(
+    current_user: User = Depends(get_current_user),
+) -> UserRead:
+    """Return the account belonging to the supplied bearer token."""
+    return UserRead.model_validate(current_user)

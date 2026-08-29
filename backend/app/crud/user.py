@@ -4,6 +4,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import User, UserRole
 
 
+async def get_by_id(session: AsyncSession, user_id: int) -> User | None:
+    return await session.get(User, user_id)
+
+
 async def get_by_username(session: AsyncSession, username: str) -> User | None:
     result = await session.execute(select(User).where(User.username == username))
     return result.scalar_one_or_none()
