@@ -45,7 +45,7 @@ async def create(
     return record
 
 
-def _apply_filters(
+def apply_filters(
     statement,
     *,
     category: str | None,
@@ -80,14 +80,14 @@ async def list_records(
     filters = {"category": category, "source": source, "start": start, "end": end}
 
     total = await session.scalar(
-        _apply_filters(select(func.count()).select_from(DataRecord), **filters)
+        apply_filters(select(func.count()).select_from(DataRecord), **filters)
     )
 
     column = SORTABLE_COLUMNS[sort_by]
     ordering = column.asc() if order is SortOrder.ASC else column.desc()
 
     statement = (
-        _apply_filters(select(DataRecord), **filters)
+        apply_filters(select(DataRecord), **filters)
         # id breaks ties so paging stays stable when timestamps repeat.
         .order_by(ordering, DataRecord.id.desc())
         .offset((page - 1) * page_size)
