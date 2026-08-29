@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.tokens import decode_access_token
 from app.crud import user as user_crud
 from app.db.session import get_session
-from app.models.user import User
+from app.models.user import User, UserRole
 
 # tokenUrl is documentation only; it tells Swagger where tokens come from.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -36,3 +36,36 @@ async def get_current_user(
         raise CREDENTIALS_EXCEPTION
 
     return user
+
+
+class RequireRoles:
+    """Dependency allowing only the listed roles through.
+
+    Authentication runs first, so an unauthenticated caller still gets 401;
+    an authenticated caller with the wrong role gets 403.
+    """
+
+    def __init__(self, *allowed_roles: UserRole) -> None:
+        self.allowed_roles = frozenset(allowed_roles)
+
+    async def __call__(self, current_user: User = Depends(get_current_user)) -> User:
+        if current_user.role not in self.allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions",
+            )
+        return current_user
+
+    def __repr__(self) -> str:
+        roles = ", ".join(sorted(role.value for role in self.allowed_roles))
+        return f"RequireRoles({roles})"
+
+
+# Read access: any authenticated account, Viewer included.
+require_read = RequireRoles(UserRole.ADMIN, UserRole.USER, UserRole.VIEWER)
+
+# Write access: Viewer is read-only. Ownership rules come with DataRecord CRUD.
+require_write = RequireRoles(UserRole.ADMIN, UserRole.USER)
+
+# Administration.
+require_admin = RequireRoles(UserRole.ADMIN)
