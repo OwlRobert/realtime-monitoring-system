@@ -1,9 +1,26 @@
 import math
 from datetime import datetime
+from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.data_record import DataSource
+
+
+class SortableField(str, Enum):
+    """Columns a client may sort on. Anything else is rejected by validation."""
+
+    TIMESTAMP = "timestamp"
+    VALUE = "value"
+    TITLE = "title"
+    CATEGORY = "category"
+    CREATED_AT = "created_at"
+    ID = "id"
+
+
+class SortOrder(str, Enum):
+    ASC = "asc"
+    DESC = "desc"
 
 
 def _reject_non_finite(value: float) -> float:
@@ -89,3 +106,13 @@ class DataRecordRead(BaseModel):
     owner_id: int | None
     created_at: datetime
     updated_at: datetime
+
+
+class DataRecordPage(BaseModel):
+    """One page of records plus the metadata needed to navigate the rest."""
+
+    items: list[DataRecordRead]
+    total: int
+    page: int
+    page_size: int
+    pages: int

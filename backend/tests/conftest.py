@@ -37,6 +37,32 @@ async def db_session(session_factory):
 
 
 @pytest.fixture
+async def make_user(db_session):
+    """Create a user with a given role, straight through the ORM."""
+    from app.core.security import hash_password
+    from app.crud import user as user_crud
+    from app.models.user import UserRole
+
+    async def _make_user(
+        role: UserRole = UserRole.USER, *, username: str | None = None
+    ) -> User:
+        name = username or f"{role.value.lower()}_account"
+        return await user_crud.create(
+            db_session,
+            username=name,
+            email=f"{name}@example.com",
+            hashed_password=hash_password("a-strong-password"),
+            role=role,
+        )
+
+    return _make_user
+
+
+def auth_headers(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
 async def client(session_factory):
     """HTTP client bound to the app, with the database dependency overridden."""
 
