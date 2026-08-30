@@ -173,3 +173,74 @@ def test_signed_out_session_is_not_an_admin():
     with patch.object(auth.st, "session_state", {}):
         assert auth.is_admin() is False
         assert auth.can_write() is False
+
+
+# --------------------------------------------------------------------------
+# Signed-out UI must not keep the authenticated navigation
+# --------------------------------------------------------------------------
+
+
+def sidebar_text(app) -> str:
+    parts = [element.value for element in app.sidebar.markdown]
+    parts += [element.value for element in app.sidebar.caption]
+    parts += [button.label for button in app.sidebar.button]
+    return " ".join(parts)
+
+
+def test_signed_out_app_shows_only_the_login_form(app):
+    app.run()
+
+    assert len(app.text_input) == 2
+    assert app.button[0].label == "Log in"
+    assert not app.exception
+
+
+def test_signed_out_app_exposes_no_authenticated_navigation(app):
+    """No account sidebar, no logout control, nothing page-specific."""
+    app.run()
+
+    text = sidebar_text(app)
+    assert "Log out" not in text
+    assert "Role:" not in text
+    assert app.sidebar.button.len == 0
+
+
+def test_navigation_appears_once_signed_in(app):
+    app.session_state["access_token"] = "a-token"
+    app.session_state["current_user"] = USER
+
+    with patch("lib.api_client.ApiClient.request") as request:
+        request.return_value = ApiResult(
+            200, {"status": "ok", "database": "ok", "version": "0.1.0"}
+        )
+        app.run()
+
+    text = sidebar_text(app)
+    assert "Log out" in text
+    assert "alice" in text
+    assert "Role: USER" in text
+
+
+def test_navigation_disappears_again_after_logout(app):
+    app.session_state["access_token"] = "a-token"
+    app.session_state["current_user"] = USER
+
+    with patch("lib.api_client.ApiClient.request") as request:
+        request.return_value = ApiResult(
+            200, {"status": "ok", "database": "ok", "version": "0.1.0"}
+        )
+        app.run()
+        assert "Log out" in sidebar_text(app)
+
+        app.sidebar.button[0].click().run()
+        assert "access_token" not in app.session_state
+
+        # The click run's tree still holds elements rendered before the
+        # logout took effect, so assert against the next clean run.
+        app.run()
+
+    # Back to the login-only UI: no account sidebar, no logout control.
+    assert "Log out" not in sidebar_text(app)
+    assert app.sidebar.button.len == 0
+    assert len(app.text_input) == 2
+    assert not app.exception

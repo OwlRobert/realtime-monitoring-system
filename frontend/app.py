@@ -57,7 +57,19 @@ def render_app() -> None:
     navigation.run()
 
 
+def render_signed_out() -> None:
+    """Show the login form and nothing else.
+
+    The login page is declared through st.navigation with the menu hidden.
+    Simply not calling st.navigation is not enough: the browser keeps
+    rendering the last page list it was sent, so after logout the signed-in
+    menu would linger. Declaring a single hidden page replaces it.
+    """
+    st.navigation([st.Page(render_login, title="Sign in", icon="🔐")],
+                  position="hidden").run()
+
+
 if auth.is_authenticated():
     render_app()
 else:
-    render_login()
+    render_signed_out()
