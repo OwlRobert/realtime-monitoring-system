@@ -1,0 +1,11 @@
+title,value,category,timestamp
+Boiler inlet temperature,62.40,temperature,2026-08-30T09:00:00
+Boiler outlet temperature,71.85,temperature,2026-08-30T09:05:00
+Condenser pressure,45.20,pressure,2026-08-30T09:10:00
+Pump discharge pressure,58.75,pressure,2026-08-30T09:15:00
+Bus voltage reading,23.10,voltage,2026-08-30T09:20:00
+Backup bus voltage,24.65,voltage,2026-08-30T09:25:00
+Ambient humidity,39.90,humidity,2026-08-30T09:30:00
+Server room humidity,41.35,humidity,2026-08-30T09:35:00
+Overheat spike,92.60,temperature,2026-08-30T09:40:00
+Pressure surge,88.15,pressure,2026-08-30T09:45:00

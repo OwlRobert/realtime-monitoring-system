@@ -33,6 +33,21 @@ class Settings(BaseSettings):
     batch_size: int = 10
     batch_interval_seconds: float = 5.0
 
+    # Demo accounts seeded once at startup. Every field is optional: when a
+    # role's three values are not all set, that account is simply skipped.
+    # Passwords come from the environment and are never written in source.
+    admin_username: str | None = None
+    admin_email: str | None = None
+    admin_password: str | None = None
+
+    user_username: str | None = None
+    user_email: str | None = None
+    user_password: str | None = None
+
+    viewer_username: str | None = None
+    viewer_email: str | None = None
+    viewer_password: str | None = None
+
     @property
     def database_url(self) -> str:
         return (
