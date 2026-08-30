@@ -10,9 +10,9 @@ administration area with user management, audit logs and database status.
 
 The whole system runs with a single `docker compose up --build`.
 
-This is a take-home assignment: it is a complete, working system, but it is
-scoped for a single-instance demonstration rather than production deployment
-(see [Important design notes](#important-design-notes)).
+The system is designed as a complete single-instance demonstration rather than
+a production-scale distributed deployment (see
+[Important design notes](#important-design-notes)).
 
 ## Features
 
@@ -61,6 +61,26 @@ scoped for a single-instance demonstration rather than production deployment
 
 All database access goes through the SQLAlchemy ORM — the application contains
 no raw SQL.
+
+## Project structure
+
+```text
+.
+├── backend/
+│   ├── app/            # FastAPI application
+│   ├── alembic/        # Database migrations
+│   └── tests/          # Backend tests
+├── frontend/
+│   ├── app.py          # Streamlit entry point
+│   ├── views/          # Application pages
+│   └── tests/          # Frontend tests
+├── docs/
+│   └── ARCHITECTURE.md # Detailed architecture documentation
+├── samples/
+│   └── data_records_sample.csv
+├── docker-compose.yml
+└── .env.example
+```
 
 ## Architecture
 
@@ -132,6 +152,10 @@ openssl rand -hex 32
 On first start the backend applies the Alembic migrations, seeds the demo
 accounts, then starts serving. MariaDB data persists in a named Docker volume
 between restarts.
+
+After startup, open http://localhost:8501 and sign in with one of the
+demo accounts below. Interactive API documentation is available at
+http://localhost:8000/docs.
 
 ## Docker deployment
 

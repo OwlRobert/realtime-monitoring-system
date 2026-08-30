@@ -1,6 +1,7 @@
 # Architecture
 
-Realtime Data Analytics & Monitoring System — approved architecture for this assignment.
+This document describes the architecture, data flows, persistence strategy,
+and key design decisions of the Real-Time Data Analytics & Monitoring System.
 
 ## System Overview
 
@@ -100,7 +101,7 @@ Broadcast never waits on the database, so a slow write cannot delay realtime del
 | ------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | Used for      | Authentication, CRUD, import, analytics, export, administration | Server-initiated push of generated realtime records                                                                                   |
 | Direction     | Client-initiated request/response                               | Server → client stream                                                                                                                |
-| Auth          | `Authorization: Bearer <JWT>`                                   | JWT is validated when establishing the WebSocket connection. The concrete token transport mechanism is defined during implementation. |
+| Auth          | `Authorization: Bearer <JWT>`                                   | JWT is passed through the `token` query parameter and validated when establishing the WebSocket connection. |
 | Documented in | Swagger / OpenAPI                                               | This document (WebSocket is outside the OpenAPI schema)                                                                               |
 
 The client never sends data upstream over the WebSocket; all writes go through REST.
@@ -131,7 +132,7 @@ Self-registration always yields the `USER` role; the role field is not accepted 
 5. **Streamlit as a pure API client** — no database driver in the frontend. One enforcement point for authorization and validation.
 6. **ORM-only for business data** — all queries and aggregations are SQLAlchemy constructs. Alembic DDL, connection health checks and pool introspection are the explicit exceptions.
 7. **Persisted `AuditLog` separate from runtime logs** — the Admin log-query feature reads a table; operational logs stream to stdout for `docker compose logs`.
-8. **Streamlit realtime consumption** — a background WebSocket client thread feeding a thread-safe queue, drained by a controlled UI refresh, because Streamlit re-runs its script on every interaction and cannot hold a connection in script scope. Implemented in the realtime phase.
+8. **Streamlit realtime consumption** — a background WebSocket client thread feeding a thread-safe queue, drained by a controlled UI refresh, because Streamlit re-runs its script on every interaction and cannot hold a connection in script scope.
 
 ## Assumptions
 
@@ -141,7 +142,8 @@ Self-registration always yields the `USER` role; the role field is not accepted 
 - The anomaly threshold is supplied by configuration. A breach sets `is_anomaly` on the record and is visible in both the live stream and history; there is no separate alert table.
 - Realtime records have no owner and draw from a small fixed set of categories; the stream is broadcast identically to all connected clients.
 - JWT is maintained in Streamlit session state for the active user session. Persistent login across sessions is outside the assignment scope.
-- Import accepts CSV and JSON, validates per row, and reports rejected rows back to the caller.
+- Import accepts CSV and JSON, validates the entire payload before persistence,
+  and inserts the batch atomically. If validation fails, no rows are persisted.
 - Alembic migrations run before the FastAPI application starts, not inside the FastAPI lifespan. The backend starts only after MariaDB is healthy and migrations complete successfully.
 - Timestamps are stored and compared in UTC.
 
@@ -150,7 +152,8 @@ Self-registration always yields the `USER` role; the role field is not accepted 
 - **Buffered writes trade durability for latency.** Up to `BATCH_SIZE` records (or one interval's worth) are lost if the process is killed without a graceful shutdown. Acceptable for simulated monitoring data.
 - **One worker and an in-process manager mean no horizontal scaling.** A second worker would run a second generator and split the broadcast set. The backend is pinned to one worker.
 - **A single `data_records` table** keeps the API surface small but mixes high-volume generated rows with low-volume user rows; indexes on `timestamp`, `(category, timestamp)` and `(source, timestamp)` carry the query load.
-- **No retention policy.** Realtime data accumulates at ~86k rows/day, which is fine for the assignment's lifetime.
+- **No retention policy.** Realtime data accumulates at ~86k rows/day, which is
+  acceptable for the intended single-instance demonstration scope.
 - **Streamlit's rerun model** makes realtime UI more involved than a JavaScript client would be, and refresh cadence is a deliberate compromise between smoothness and rerun cost.
 - **Redis, Kafka, Celery, Kubernetes, distributed fan-out, HA and retention**
   are deliberately out of scope for this assignment and are discussed here
