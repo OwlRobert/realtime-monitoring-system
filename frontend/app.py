@@ -1,6 +1,6 @@
 import streamlit as st
 
-from lib import auth
+from lib import auth, realtime_state
 from lib.config import API_BASE_URL
 
 st.set_page_config(page_title="Realtime Monitoring System", page_icon="📈", layout="wide")
@@ -32,6 +32,9 @@ def render_account_sidebar() -> None:
         st.markdown(f"**{user['username']}**")
         st.caption(f"Role: {user['role']}")
         if st.button("Log out", use_container_width=True):
+            # Stop the realtime receiver first: it must not keep using the
+            # token of a session that has ended.
+            realtime_state.shutdown_session()
             auth.logout()
             st.rerun()
 
