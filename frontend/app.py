@@ -40,16 +40,19 @@ def render_account_sidebar() -> None:
 
 
 def render_app() -> None:
-    # Every role may reach every page here; write controls are restricted
-    # per page in later steps, and the backend enforces the real rules.
-    navigation = st.navigation(
-        [
-            st.Page("views/home.py", title="Home", icon="🏠", default=True),
-            st.Page("views/records.py", title="Records", icon="🗂️"),
-            st.Page("views/analytics.py", title="Analytics", icon="📊"),
-            st.Page("views/realtime.py", title="Realtime", icon="📡"),
-        ]
-    )
+    # Every role reaches the four main pages; write controls are restricted
+    # per page. The Admin entry is hidden from non-admins for convenience
+    # only — FastAPI enforces the real rules on every request.
+    pages = [
+        st.Page("views/home.py", title="Home", icon="🏠", default=True),
+        st.Page("views/records.py", title="Records", icon="🗂️"),
+        st.Page("views/analytics.py", title="Analytics", icon="📊"),
+        st.Page("views/realtime.py", title="Realtime", icon="📡"),
+    ]
+    if auth.is_admin():
+        pages.append(st.Page("views/admin.py", title="Admin", icon="🛠️"))
+
+    navigation = st.navigation(pages)
     render_account_sidebar()
     navigation.run()
 

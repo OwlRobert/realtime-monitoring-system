@@ -2,18 +2,21 @@ import logging
 import secrets
 from functools import lru_cache
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.core.security import hash_password, verify_password
 from app.core.tokens import create_access_token
+from app.crud import audit_log as audit_crud
 from app.crud import user as user_crud
 from app.db.session import get_session
+from app.models.audit_log import AuditAction, ResourceType
 from app.models.user import User, UserRole
 from app.schemas.auth import LoginRequest, TokenResponse
 from app.schemas.user import UserCreate, UserRead
+from app.utils.request_context import client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +43,9 @@ def _dummy_hash() -> str:
     responses={409: {"description": "Username or email already registered."}},
 )
 async def register(
-    payload: UserCreate, session: AsyncSession = Depends(get_session)
+    payload: UserCreate,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
 ) -> UserRead:
     """Create an account. Self-registration always yields the USER role."""
     if await user_crud.get_by_username(session, payload.username):
@@ -69,6 +74,18 @@ async def register(
             detail="Username or email already registered",
         ) from None
 
+    # The id only exists after the insert, so this audit row is committed
+    # separately; a failure here must not undo a successful registration.
+    await audit_crud.record_and_commit(
+        session,
+        user_id=user.id,
+        action=AuditAction.USER_REGISTER,
+        resource_type=ResourceType.USER,
+        resource_id=user.id,
+        detail=f"username={user.username} role={user.role.value}",
+        ip_address=client_ip(request),
+    )
+
     logger.info("Registered user id=%s username=%s", user.id, user.username)
     return UserRead.model_validate(user)
 
@@ -80,7 +97,9 @@ async def register(
     responses={401: {"description": "Invalid credentials or inactive account."}},
 )
 async def login(
-    payload: LoginRequest, session: AsyncSession = Depends(get_session)
+    payload: LoginRequest,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
 ) -> TokenResponse:
     """Verify credentials and issue a JWT access token."""
     user = await user_crud.get_by_username(session, payload.username)
@@ -94,6 +113,18 @@ async def login(
             detail=INVALID_CREDENTIALS,
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Login mutates nothing, so its audit row is its own transaction.
+    # Neither the password nor the issued token is recorded.
+    await audit_crud.record_and_commit(
+        session,
+        user_id=user.id,
+        action=AuditAction.USER_LOGIN,
+        resource_type=ResourceType.USER,
+        resource_id=user.id,
+        detail=f"username={user.username}",
+        ip_address=client_ip(request),
+    )
 
     logger.info("User id=%s logged in", user.id)
     return TokenResponse(access_token=create_access_token(user.id))

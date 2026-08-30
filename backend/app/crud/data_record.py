@@ -161,3 +161,18 @@ async def update(
 async def delete(session: AsyncSession, record: DataRecord) -> None:
     await session.delete(record)
     await session.commit()
+
+
+async def count(session: AsyncSession, *, source: DataSource | None = None) -> int:
+    """Number of records, optionally restricted to one source."""
+    statement = select(func.count()).select_from(DataRecord)
+    if source is not None:
+        statement = statement.where(DataRecord.source == source)
+    return await session.scalar(statement) or 0
+
+
+async def latest_timestamp(session: AsyncSession, *, source: DataSource) -> datetime | None:
+    """Most recent reading time for a source, for the admin status page."""
+    return await session.scalar(
+        select(func.max(DataRecord.timestamp)).where(DataRecord.source == source)
+    )

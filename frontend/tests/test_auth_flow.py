@@ -137,3 +137,39 @@ def test_logout_clears_the_session(app):
     assert "access_token" not in app.session_state
     assert "current_user" not in app.session_state
     assert len(app.text_input) == 2  # back at the login form
+
+
+# --------------------------------------------------------------------------
+# Admin navigation visibility (UX only; FastAPI is the security boundary)
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("role", "is_admin", "can_write"),
+    [("ADMIN", True, True), ("USER", False, True), ("VIEWER", False, False)],
+)
+def test_role_helpers_drive_navigation_and_controls(app, role, is_admin, can_write):
+    """`auth.is_admin` decides whether the Admin page is listed at all."""
+    from lib import auth
+
+    app.session_state["access_token"] = "a-token"
+    app.session_state["current_user"] = {**USER, "role": role}
+
+    with patch("lib.api_client.ApiClient.request") as request:
+        request.return_value = ApiResult(
+            200, {"status": "ok", "database": "ok", "version": "0.1.0"}
+        )
+        app.run()
+
+    with patch.object(auth.st, "session_state", {"current_user": {"role": role}}):
+        assert auth.is_admin() is is_admin
+        assert auth.can_write() is can_write
+    assert not app.exception
+
+
+def test_signed_out_session_is_not_an_admin():
+    from lib import auth
+
+    with patch.object(auth.st, "session_state", {}):
+        assert auth.is_admin() is False
+        assert auth.can_write() is False

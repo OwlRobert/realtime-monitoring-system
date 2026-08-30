@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User, UserRole
@@ -37,3 +37,13 @@ async def create(
     await session.commit()
     await session.refresh(user)
     return user
+
+
+async def list_all(session: AsyncSession) -> list[User]:
+    """Every user, newest last. The user table stays small in this system."""
+    result = await session.execute(select(User).order_by(User.id))
+    return list(result.scalars().all())
+
+
+async def count(session: AsyncSession) -> int:
+    return await session.scalar(select(func.count()).select_from(User)) or 0

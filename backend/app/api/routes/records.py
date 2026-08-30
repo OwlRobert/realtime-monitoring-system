@@ -8,6 +8,7 @@ from fastapi import (
     File,
     HTTPException,
     Query,
+    Request,
     Response,
     UploadFile,
     status,
@@ -15,8 +16,10 @@ from fastapi import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_read, require_write
+from app.crud import audit_log as audit_crud
 from app.crud import data_record as record_crud
 from app.db.session import get_session
+from app.models.audit_log import AuditAction, ResourceType
 from app.models.data_record import DataRecord, DataSource
 from app.models.user import User, UserRole
 from app.schemas.data_record import (
@@ -29,6 +32,7 @@ from app.schemas.data_record import (
     SortOrder,
 )
 from app.services import excel, importer
+from app.utils.request_context import client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -69,10 +73,21 @@ def _ensure_may_modify(record: DataRecord, current_user: User) -> None:
 )
 async def create_record(
     payload: DataRecordCreate,
+    request: Request,
     current_user: User = Depends(require_write),
     session: AsyncSession = Depends(get_session),
 ) -> DataRecordRead:
     record = await record_crud.create(session, payload, owner_id=current_user.id)
+    audit_crud.record_event(
+        session,
+        user_id=current_user.id,
+        action=AuditAction.RECORD_CREATE,
+        resource_type=ResourceType.RECORD,
+        resource_id=record.id,
+        detail=f"{record.category}={record.value} source={record.source.value}",
+        ip_address=client_ip(request),
+    )
+    await session.commit()
     logger.info("User id=%s created record id=%s", current_user.id, record.id)
     return DataRecordRead.model_validate(record)
 
@@ -122,6 +137,7 @@ async def list_records(
     },
 )
 async def import_records(
+    request: Request,
     file: UploadFile = File(description="A .csv or .json file of records."),
     current_user: User = Depends(require_write),
     session: AsyncSession = Depends(get_session),
@@ -139,6 +155,16 @@ async def import_records(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
         ) from None
 
+    # One event for the whole operation, never one per imported row. It is
+    # staged before the batch commit so both land together.
+    audit_crud.record_event(
+        session,
+        user_id=current_user.id,
+        action=AuditAction.RECORD_IMPORT,
+        resource_type=ResourceType.RECORD,
+        detail=f"file={file.filename} rows={len(rows)}",
+        ip_address=client_ip(request),
+    )
     imported = await record_crud.bulk_create(session, rows, owner_id=current_user.id)
     logger.info(
         "User id=%s imported %d records from %s",
@@ -220,12 +246,23 @@ async def read_record(
 async def update_record(
     record_id: int,
     payload: DataRecordUpdate,
+    request: Request,
     current_user: User = Depends(require_write),
     session: AsyncSession = Depends(get_session),
 ) -> DataRecordRead:
     record = await _get_or_404(session, record_id)
     _ensure_may_modify(record, current_user)
 
+    changed = ", ".join(sorted(payload.model_dump(exclude_unset=True)))
+    audit_crud.record_event(
+        session,
+        user_id=current_user.id,
+        action=AuditAction.RECORD_UPDATE,
+        resource_type=ResourceType.RECORD,
+        resource_id=record.id,
+        detail=f"fields: {changed}" if changed else "no changes",
+        ip_address=client_ip(request),
+    )
     updated = await record_crud.update(session, record, payload)
     logger.info("User id=%s updated record id=%s", current_user.id, record_id)
     return DataRecordRead.model_validate(updated)
@@ -242,12 +279,22 @@ async def update_record(
 )
 async def delete_record(
     record_id: int,
+    request: Request,
     current_user: User = Depends(require_write),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
     record = await _get_or_404(session, record_id)
     _ensure_may_modify(record, current_user)
 
+    audit_crud.record_event(
+        session,
+        user_id=current_user.id,
+        action=AuditAction.RECORD_DELETE,
+        resource_type=ResourceType.RECORD,
+        resource_id=record.id,
+        detail=f"{record.title} ({record.category})",
+        ip_address=client_ip(request),
+    )
     await record_crud.delete(session, record)
     logger.info("User id=%s deleted record id=%s", current_user.id, record_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
