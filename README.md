@@ -112,7 +112,7 @@ docker compose down -v         # stop containers and DELETE the database volume
 |---|---|
 | Streamlit UI | http://localhost:8501 |
 | FastAPI backend | http://localhost:8000 |
-| **API documentation (Swagger)** | **http://localhost:8000/docs** |
+| **API documentation (Swagger)** | **[http://localhost:8000/docs](http://localhost:8000/docs)** |
 | ReDoc | http://localhost:8000/redoc |
 | OpenAPI schema | http://localhost:8000/openapi.json |
 | Health check | http://localhost:8000/health |
@@ -132,7 +132,9 @@ Seeded automatically on first start from `.env`, one per role:
 Sign in at http://localhost:8501.
 
 > **These are local demonstration credentials only and must be changed for any
-> non-demo environment.** They live in `.env`, never in source code.
+> non-demo environment.** The demo credentials are configured through
+> environment variables. The values shown above are provided in `.env.example`
+> for local demonstration only.
 
 Notes:
 - Seeding is idempotent: existing accounts are never modified, and passwords are
@@ -144,8 +146,9 @@ Notes:
 
 [`samples/data_records_sample.csv`](samples/data_records_sample.csv) contains ten
 records across four categories (temperature, pressure, voltage, humidity),
-including two values above the default anomaly threshold (`ANOMALY_THRESHOLD`,
-80.0) so they stand out in the analytics charts. Note that the anomaly *flag*
+including two values above the default realtime anomaly threshold
+(`ANOMALY_THRESHOLD`, 80.0) for representative high-value sample data.
+Note that the anomaly *flag*
 is server-controlled and applied to generated realtime readings only —
 imported rows are stored with `is_anomaly = false` regardless of their value.
 
