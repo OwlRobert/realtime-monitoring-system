@@ -73,6 +73,47 @@ background task generates one reading per second, broadcasts it immediately to
 WebSocket subscribers, and appends it to an in-memory buffer that a separate
 task flushes to MariaDB in batches, so delivery never waits on the database.
 
+```mermaid
+flowchart LR
+    subgraph Browser
+        U[User]
+    end
+
+    subgraph frontend["Streamlit Container"]
+        UI[Multi-page UI<br/>session state]
+        WSC[Background WS client<br/>thread-safe queue]
+    end
+
+    subgraph backend["FastAPI Container — 1 worker"]
+        REST[REST API<br/>auth · CRUD · analytics · admin]
+        IO[CSV/JSON import<br/>Excel export]
+        WS[WebSocket endpoint]
+        GEN[Generator task<br/>1 record/sec]
+        CM[Connection Manager<br/>in-process]
+        BUF[Write buffer]
+        AUD[Audit log writer]
+        ORM[Async SQLAlchemy ORM]
+    end
+
+    DB[(MariaDB 11.7)]
+
+    U --> UI
+    UI -->|HTTP + JWT| REST
+    WSC -->|WebSocket + JWT| WS
+    WSC --> UI
+    WS --> CM
+    GEN --> CM
+    GEN --> BUF
+    CM -->|broadcast| WSC
+    BUF -->|batch flush| ORM
+    REST --> IO
+    IO --> ORM
+    REST --> AUD
+    AUD --> ORM
+    REST --> ORM
+    ORM -->|asyncmy| DB
+```
+
 ## Quick start
 
 ```bash
