@@ -57,16 +57,16 @@ flowchart LR
 
 ## Component Responsibilities
 
-| Component | Responsibility |
-|---|---|
-| FastAPI REST layer | Registration, login, token issuance; CRUD on data records; CSV/JSON import; analytics and Excel export; admin endpoints (users, roles, audit log, database status). Pydantic validation, Swagger docs, global error handling, stdout logging. |
-| WebSocket endpoint | Authenticates the connection, registers it with the connection manager, streams realtime records to subscribers. |
-| Connection Manager | In-process registry of active WebSocket connections; fan-out broadcast; cleanup on disconnect. |
-| Generator task | Async background task started in the app lifespan; emits one simulated record per second, marks threshold breaches, hands the record to the manager and the buffer. |
-| Write buffer | Accumulates generated records; flushes via the ORM when `BATCH_SIZE` or `BATCH_INTERVAL_SECONDS` is reached, and on graceful shutdown. |
-| ORM / data access | Async SQLAlchemy sessions over a managed connection pool; all queries and aggregations expressed as ORM constructs. |
-| Alembic | Schema versioning; migrations run as a separate step before the FastAPI application process starts. |
-| Streamlit app | Login/logout, session state, data management pages, analytics charts and downloads, admin pages, and a live chart fed by the background WebSocket client. |
+| Component          | Responsibility                                                                                                                                                                                                                              |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FastAPI REST layer | Registration, login, token issuance; CRUD on data records; CSV/JSON import; analytics and Excel export; admin endpoints (users, roles, audit log, database status). Pydantic validation, HTTP error handling, Swagger docs, stdout logging. |
+| WebSocket endpoint | Authenticates the connection, registers it with the connection manager, streams realtime records to subscribers.                                                                                                                            |
+| Connection Manager | In-process registry of active WebSocket connections; fan-out broadcast; cleanup on disconnect.                                                                                                                                              |
+| Generator task     | Async background task started in the app lifespan; emits one simulated record per second, marks threshold breaches, hands the record to the manager and the buffer.                                                                         |
+| Write buffer       | Accumulates generated records; flushes via the ORM when `BATCH_SIZE` or `BATCH_INTERVAL_SECONDS` is reached, and on graceful shutdown.                                                                                                      |
+| ORM / data access  | Async SQLAlchemy sessions over a managed connection pool; all queries and aggregations expressed as ORM constructs.                                                                                                                         |
+| Alembic            | Schema versioning; migrations run as a separate step before the FastAPI application process starts.                                                                                                                                         |
+| Streamlit app      | Login/logout, session state, data management pages, analytics charts and downloads, admin pages, and a live chart fed by the background WebSocket client.                                                                                   |
 
 ## Data Model
 
@@ -96,12 +96,12 @@ Broadcast never waits on the database, so a slow write cannot delay realtime del
 
 ## REST vs WebSocket
 
-| | REST | WebSocket |
-|---|---|---|
-| Used for | Authentication, CRUD, import, analytics, export, administration | Server-initiated push of generated realtime records |
-| Direction | Client-initiated request/response | Server → client stream |
-| Auth | `Authorization: Bearer <JWT>` | JWT is validated when establishing the WebSocket connection. The concrete token transport mechanism is defined during implementation. |
-| Documented in | Swagger / OpenAPI | This document (WebSocket is outside the OpenAPI schema) |
+|               | REST                                                            | WebSocket                                                                                                                             |
+| ------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Used for      | Authentication, CRUD, import, analytics, export, administration | Server-initiated push of generated realtime records                                                                                   |
+| Direction     | Client-initiated request/response                               | Server → client stream                                                                                                                |
+| Auth          | `Authorization: Bearer <JWT>`                                   | JWT is validated when establishing the WebSocket connection. The concrete token transport mechanism is defined during implementation. |
+| Documented in | Swagger / OpenAPI                                               | This document (WebSocket is outside the OpenAPI schema)                                                                               |
 
 The client never sends data upstream over the WebSocket; all writes go through REST.
 
@@ -111,14 +111,14 @@ JWT bearer tokens issued at login and verified on every REST request and WebSock
 
 Three roles:
 
-| Capability | Admin | User | Viewer |
-|---|---|---|---|
-| Read records, analytics, export | ✅ | ✅ | ✅ |
-| Subscribe to realtime WebSocket | ✅ | ✅ | ✅ |
-| Create records / import | ✅ | ✅ | ❌ |
-| Update / delete records | Any record | Own records only | ❌ |
-| User list, role changes | ✅ | ❌ | ❌ |
-| Audit log, database status | ✅ | ❌ | ❌ |
+| Capability                      | Admin      | User             | Viewer |
+| ------------------------------- | ---------- | ---------------- | ------ |
+| Read records, analytics, export | ✅         | ✅               | ✅     |
+| Subscribe to realtime WebSocket | ✅         | ✅               | ✅     |
+| Create records / import         | ✅         | ✅               | ❌     |
+| Update / delete records         | Any record | Own records only | ❌     |
+| User list, role changes         | ✅         | ❌               | ❌     |
+| Audit log, database status      | ✅         | ❌               | ❌     |
 
 Self-registration always yields the `USER` role; the role field is not accepted from the public registration endpoint. The initial Admin is seeded at startup. Only an Admin can promote or demote users between `ADMIN`, `USER` and `VIEWER`.
 
@@ -152,4 +152,6 @@ Self-registration always yields the `USER` role; the role field is not accepted 
 - **A single `data_records` table** keeps the API surface small but mixes high-volume generated rows with low-volume user rows; indexes on `timestamp`, `(category, timestamp)` and `(source, timestamp)` carry the query load.
 - **No retention policy.** Realtime data accumulates at ~86k rows/day, which is fine for the assignment's lifetime.
 - **Streamlit's rerun model** makes realtime UI more involved than a JavaScript client would be, and refresh cadence is a deliberate compromise between smoothness and rerun cost.
-- **Redis, Kafka, Celery, Kubernetes, distributed fan-out, HA and retention** are deliberately out of scope here and belong in `PRODUCTION.md`.
+- **Redis, Kafka, Celery, Kubernetes, distributed fan-out, HA and retention**
+  are deliberately out of scope for this assignment and are discussed here
+  only as production considerations.
