@@ -113,7 +113,6 @@ docker compose down -v         # stop containers and DELETE the database volume
 | Streamlit UI | http://localhost:8501 |
 | FastAPI backend | http://localhost:8000 |
 | **API documentation (Swagger)** | **[http://localhost:8000/docs](http://localhost:8000/docs)** |
-| ReDoc | http://localhost:8000/redoc |
 | OpenAPI schema | http://localhost:8000/openapi.json |
 | Health check | http://localhost:8000/health |
 
