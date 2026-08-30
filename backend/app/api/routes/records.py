@@ -2,7 +2,16 @@ import logging
 import math
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+    status,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_read, require_write
@@ -15,15 +24,23 @@ from app.schemas.data_record import (
     DataRecordPage,
     DataRecordRead,
     DataRecordUpdate,
+    ImportResult,
     SortableField,
     SortOrder,
 )
+from app.services import excel, importer
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/records", tags=["records"])
 
 MAX_PAGE_SIZE = 100
+# Exports are not paginated, so the cap is explicit and reported in a header.
+EXPORT_ROW_LIMIT = 50_000
+EXPORT_MEDIA_TYPE = (
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+EXPORT_FILENAME = "data_records.xlsx"
 NOT_FOUND = HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Record not found")
 
 
@@ -91,6 +108,88 @@ async def list_records(
         page=page,
         page_size=page_size,
         pages=math.ceil(total / page_size),
+    )
+
+
+@router.post(
+    "/import",
+    response_model=ImportResult,
+    status_code=status.HTTP_201_CREATED,
+    summary="Bulk import records from a CSV or JSON file",
+    responses={
+        400: {"description": "The file could not be imported."},
+        403: {"description": "Viewers may not import."},
+    },
+)
+async def import_records(
+    file: UploadFile = File(description="A .csv or .json file of records."),
+    current_user: User = Depends(require_write),
+    session: AsyncSession = Depends(get_session),
+) -> ImportResult:
+    """Validate an entire file, then insert it in a single transaction.
+
+    Imported rows are always `source=IMPORT` and owned by the caller; the
+    file cannot influence ownership, provenance or the anomaly flag.
+    """
+    content = await file.read()
+    try:
+        rows = importer.parse_upload(file.filename or "", content)
+    except importer.ImportError_ as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
+        ) from None
+
+    imported = await record_crud.bulk_create(session, rows, owner_id=current_user.id)
+    logger.info(
+        "User id=%s imported %d records from %s",
+        current_user.id,
+        imported,
+        file.filename,
+    )
+    return ImportResult(imported=imported, filename=file.filename or "")
+
+
+@router.get(
+    "/export.xlsx",
+    summary="Download matching records as an Excel workbook",
+    response_class=Response,
+    responses={
+        200: {
+            "content": {EXPORT_MEDIA_TYPE: {}},
+            "description": "An .xlsx workbook of the matching records.",
+        }
+    },
+)
+async def export_records(
+    category: str | None = Query(None, max_length=100),
+    source: DataSource | None = Query(None),
+    start: datetime | None = Query(None, description="Earliest timestamp, inclusive."),
+    end: datetime | None = Query(None, description="Latest timestamp, inclusive."),
+    current_user: User = Depends(require_read),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    """Export the same rows `GET /records` would return, without pagination."""
+    records = await record_crud.list_for_export(
+        session,
+        category=category,
+        source=source,
+        start=start,
+        end=end,
+        limit=EXPORT_ROW_LIMIT,
+    )
+    workbook = excel.build_workbook(records)
+    truncated = len(records) >= EXPORT_ROW_LIMIT
+
+    logger.info("User id=%s exported %d records", current_user.id, len(records))
+    return Response(
+        content=workbook,
+        media_type=EXPORT_MEDIA_TYPE,
+        headers={
+            "Content-Disposition": f'attachment; filename="{EXPORT_FILENAME}"',
+            "X-Export-Rows": str(len(records)),
+            "X-Export-Row-Limit": str(EXPORT_ROW_LIMIT),
+            "X-Export-Truncated": "true" if truncated else "false",
+        },
     )
 
 

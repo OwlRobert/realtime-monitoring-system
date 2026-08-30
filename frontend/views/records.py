@@ -9,6 +9,8 @@ from lib.api_client import ApiError
 PAGE_KEY = "records_page"
 FILTER_KEY = "records_filter_signature"
 CONFIRM_KEY = "records_pending_delete"
+EXPORT_KEY = "records_export_bytes"
+EXPORT_ROWS_KEY = "records_export_rows"
 
 st.title("🗂️ Records")
 
@@ -123,6 +125,40 @@ if following.button("Next →", disabled=page >= pages, use_container_width=True
     st.rerun()
 
 # --------------------------------------------------------------------------
+# Excel export — available to every role, using the filters above
+# --------------------------------------------------------------------------
+
+st.divider()
+export_column, note_column = st.columns([1, 3])
+if export_column.button("Prepare Excel export", use_container_width=True):
+    try:
+        exported = records_api.export_excel(
+            category=category or None, source=source_filter, start=start, end=end
+        )
+    except ApiError as exc:
+        st.error(str(exc))
+    else:
+        if exported.ok:
+            st.session_state[EXPORT_KEY] = exported.data
+            rows = (exported.headers or {}).get("x-export-rows", "?")
+            st.session_state[EXPORT_ROWS_KEY] = rows
+        else:
+            ui.report_error(exported)
+
+if st.session_state.get(EXPORT_KEY):
+    note_column.caption(
+        f"{st.session_state.get(EXPORT_ROWS_KEY, '?')} rows match the current filters."
+    )
+    st.download_button(
+        "⬇ Download data_records.xlsx",
+        data=st.session_state[EXPORT_KEY],
+        file_name=records_api.EXPORT_FILENAME,
+        mime=records_api.EXPORT_MEDIA_TYPE,
+    )
+else:
+    note_column.caption("The export uses the filters set above.")
+
+# --------------------------------------------------------------------------
 # Write controls
 # --------------------------------------------------------------------------
 
@@ -132,7 +168,9 @@ if not may_write:
     st.stop()
 
 st.divider()
-create_tab, edit_tab, delete_tab = st.tabs(["Create", "Edit", "Delete"])
+create_tab, import_tab, edit_tab, delete_tab = st.tabs(
+    ["Create", "Import", "Edit", "Delete"]
+)
 
 with create_tab:
     with st.form("create_record", clear_on_submit=True):
@@ -163,6 +201,42 @@ with create_tab:
                 st.rerun()
             else:
                 ui.report_error(created)
+
+with import_tab:
+    st.caption(
+        "Upload a .csv or .json file. Rows are stored as IMPORT records owned "
+        "by you; the file cannot set owner, source or the anomaly flag. "
+        "The whole file is validated before anything is saved."
+    )
+    upload = st.file_uploader(
+        "Records file", type=records_api.IMPORT_EXTENSIONS, key="import_file"
+    )
+    if st.button("Import file", disabled=upload is None):
+        try:
+            imported = records_api.import_file(upload.name, upload.getvalue(), upload.type)
+        except ApiError as exc:
+            st.error(str(exc))
+        else:
+            if imported.ok:
+                st.success(
+                    f"Imported {imported.data['imported']} records from {imported.data['filename']}."
+                )
+                st.rerun()
+            else:
+                ui.report_error(imported)
+
+    with st.expander("Expected format"):
+        st.code(
+            "title,value,category,timestamp\n"
+            "CPU reading,42.5,cpu,2026-08-30T10:00:00",
+            language="text",
+        )
+        st.code(
+            '[{"title": "CPU reading", "value": 42.5, '
+            '"category": "cpu", "timestamp": "2026-08-30T10:00:00"}]',
+            language="json",
+        )
+
 
 editable = records_api.modifiable(records, user)
 

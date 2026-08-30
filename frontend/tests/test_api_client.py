@@ -8,6 +8,7 @@ class FakeResponse:
     def __init__(self, status_code=200, payload=None, *, content=b"{}", bad_json=False):
         self.status_code = status_code
         self.content = content
+        self.headers = {}
         self._payload = payload
         self._bad_json = bad_json
 
@@ -151,3 +152,58 @@ def test_non_json_response_raises_api_error():
 
 def test_successful_result_has_no_error_message():
     assert ApiResult(200, {"a": 1}).error_message == ""
+
+
+# --------------------------------------------------------------------------
+# Multipart upload and binary download
+# --------------------------------------------------------------------------
+
+
+def test_files_are_forwarded_for_multipart_uploads():
+    session = FakeSession(FakeResponse(201, {"imported": 2}))
+    files = {"file": ("records.csv", b"title,value", "text/csv")}
+
+    make_client(session).post("/records/import", files=files, token="a-token")
+
+    call = session.calls[0]
+    assert call["files"] == files
+    assert call["headers"] == {"Authorization": "Bearer a-token"}   # auth still attached
+    assert call["json"] is None                                    # not sent as JSON
+
+
+def test_binary_response_is_returned_as_bytes():
+    payload = b"PK\x03\x04binary-workbook"
+    session = FakeSession(FakeResponse(200, content=payload))
+    session.response.content = payload
+
+    result = make_client(session).get("/records/export.xlsx", raw=True)
+
+    assert result.ok is True
+    assert result.data == payload
+
+
+def test_binary_responses_expose_headers():
+    session = FakeSession(FakeResponse(200, content=b"PK"))
+    session.response.headers = {"X-Export-Rows": "7"}
+
+    result = make_client(session).get("/records/export.xlsx", raw=True)
+
+    assert result.headers["X-Export-Rows"] == "7"
+
+
+def test_binary_request_still_decodes_json_errors():
+    session = FakeSession(FakeResponse(403, {"detail": "Insufficient permissions"}))
+
+    result = make_client(session).get("/records/export.xlsx", raw=True)
+
+    assert result.ok is False
+    assert result.error_message == "Insufficient permissions"
+
+
+def test_json_requests_are_unaffected_by_the_new_parameters():
+    session = FakeSession(FakeResponse(200, {"status": "ok"}))
+
+    result = make_client(session).get("/health")
+
+    assert result.data == {"status": "ok"}
+    assert session.calls[0]["files"] is None

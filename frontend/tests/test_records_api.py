@@ -200,3 +200,109 @@ def test_backend_errors_are_returned_not_raised():
 
     assert result.ok is False
     assert result.error_message == "Not permitted to modify this record"
+
+
+# --------------------------------------------------------------------------
+# Bulk import
+# --------------------------------------------------------------------------
+
+CSV_BYTES = b"title,value,category,timestamp\nCPU,42.5,cpu,2026-08-30T10:00:00\n"
+
+
+def test_import_sends_the_file_as_multipart():
+    with patch("lib.auth.request") as request:
+        request.return_value = ApiResult(201, {"imported": 1, "filename": "records.csv"})
+        records_api.import_file("records.csv", CSV_BYTES, "text/csv")
+
+    assert request.call_args.args == ("POST", "/records/import")
+    files = request.call_args.kwargs["files"]
+    assert files == {"file": ("records.csv", CSV_BYTES, "text/csv")}
+    assert "json" not in request.call_args.kwargs
+
+
+def test_import_falls_back_to_a_generic_content_type():
+    with patch("lib.auth.request") as request:
+        request.return_value = ApiResult(201, {"imported": 1})
+        records_api.import_file("records.json", b"[]", None)
+
+    assert request.call_args.kwargs["files"]["file"][2] == "application/octet-stream"
+
+
+def test_successful_import_count_is_available():
+    with patch("lib.auth.request") as request:
+        request.return_value = ApiResult(201, {"imported": 125, "filename": "big.csv"})
+        result = records_api.import_file("big.csv", CSV_BYTES)
+
+    assert result.ok is True
+    assert result.data["imported"] == 125
+
+
+def test_import_validation_errors_are_surfaced():
+    with patch("lib.auth.request") as request:
+        request.return_value = ApiResult(400, {"detail": "Row 2: value — must be a number"})
+        result = records_api.import_file("records.csv", CSV_BYTES)
+
+    assert result.ok is False
+    assert result.error_message == "Row 2: value — must be a number"
+
+
+def test_viewer_import_rejection_is_surfaced():
+    with patch("lib.auth.request") as request:
+        request.return_value = ApiResult(403, {"detail": "Insufficient permissions"})
+        result = records_api.import_file("records.csv", CSV_BYTES)
+
+    assert result.status_code == 403
+
+
+def test_only_csv_and_json_are_offered_to_the_uploader():
+    assert records_api.IMPORT_EXTENSIONS == ["csv", "json"]
+
+
+# --------------------------------------------------------------------------
+# Excel export
+# --------------------------------------------------------------------------
+
+
+def test_export_requests_raw_bytes():
+    with patch("lib.auth.request") as request:
+        request.return_value = ApiResult(200, b"PK\x03\x04", {"x-export-rows": "3"})
+        result = records_api.export_excel()
+
+    assert request.call_args.args == ("GET", "/records/export.xlsx")
+    assert request.call_args.kwargs["raw"] is True
+    assert result.data.startswith(b"PK")
+    assert result.headers["x-export-rows"] == "3"
+
+
+def test_export_uses_the_same_filter_names_as_records():
+    query = records_api.export_query(
+        category="cpu",
+        source="IMPORT",
+        start=datetime(2026, 8, 1),
+        end=datetime(2026, 8, 2),
+    )
+
+    assert query == {
+        "category": "cpu",
+        "source": "IMPORT",
+        "start": "2026-08-01T00:00:00",
+        "end": "2026-08-02T00:00:00",
+    }
+    assert "start_time" not in query
+
+
+def test_export_omits_empty_filters():
+    assert records_api.export_query(category="", source=None) == {}
+
+
+def test_export_errors_are_surfaced():
+    with patch("lib.auth.request") as request:
+        request.return_value = ApiResult(401, {"detail": "Could not validate credentials"})
+        result = records_api.export_excel()
+
+    assert result.unauthorized is True
+
+
+def test_export_filename_and_mime_type():
+    assert records_api.EXPORT_FILENAME == "data_records.xlsx"
+    assert records_api.EXPORT_MEDIA_TYPE.endswith("spreadsheetml.sheet")

@@ -130,3 +130,48 @@ def changed_fields(record: dict[str, Any], submitted: dict[str, Any]) -> dict[st
         for field, value in submitted.items()
         if record.get(field) != value
     }
+
+
+# --------------------------------------------------------------------------
+# Bulk import and Excel export
+# --------------------------------------------------------------------------
+
+IMPORT_EXTENSIONS = ["csv", "json"]
+EXPORT_FILENAME = "data_records.xlsx"
+EXPORT_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def import_file(filename: str, content: bytes, content_type: str | None = None) -> ApiResult:
+    """Upload a CSV/JSON file. The backend validates and persists it."""
+    return auth.request(
+        "POST",
+        "/records/import",
+        files={"file": (filename, content, content_type or "application/octet-stream")},
+    )
+
+
+def export_query(
+    *,
+    category: str | None = None,
+    source: str | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> dict[str, Any]:
+    """Export filters, using the same names as GET /records."""
+    query: dict[str, Any] = {}
+    if category:
+        query["category"] = category
+    if source:
+        query["source"] = source
+    if start is not None:
+        query["start"] = start.isoformat()
+    if end is not None:
+        query["end"] = end.isoformat()
+    return query
+
+
+def export_excel(**filters: Any) -> ApiResult:
+    """Fetch the .xlsx bytes; the backend generates the workbook."""
+    return auth.request(
+        "GET", "/records/export.xlsx", params=export_query(**filters), raw=True
+    )

@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.data_record import DataRecord, DataSource
 from app.schemas.data_record import (
     DataRecordCreate,
+    DataRecordImportRow,
     DataRecordUpdate,
     SortOrder,
     SortableField,
@@ -43,6 +44,55 @@ async def create(
     await session.commit()
     await session.refresh(record)
     return record
+
+
+async def bulk_create(
+    session: AsyncSession,
+    rows: list[DataRecordImportRow],
+    *,
+    owner_id: int,
+) -> int:
+    """Insert a whole validated batch in one transaction.
+
+    Every row is marked as imported and owned by the caller; nothing from the
+    uploaded file influences those fields. One commit, so a failure leaves the
+    table exactly as it was.
+    """
+    session.add_all(
+        [
+            DataRecord(
+                title=row.title,
+                value=row.value,
+                category=row.category,
+                timestamp=row.timestamp,
+                source=DataSource.IMPORT,
+                owner_id=owner_id,
+            )
+            for row in rows
+        ]
+    )
+    await session.commit()
+    return len(rows)
+
+
+async def list_for_export(
+    session: AsyncSession,
+    *,
+    category: str | None = None,
+    source: DataSource | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    limit: int,
+) -> list[DataRecord]:
+    """All matching records, oldest first, capped by an explicit limit."""
+    statement = (
+        apply_filters(
+            select(DataRecord), category=category, source=source, start=start, end=end
+        )
+        .order_by(DataRecord.timestamp.asc(), DataRecord.id.asc())
+        .limit(limit)
+    )
+    return list((await session.execute(statement)).scalars().all())
 
 
 def apply_filters(

@@ -18,10 +18,14 @@ class ApiError(Exception):
 
 @dataclass(frozen=True)
 class ApiResult:
-    """One backend response: status plus decoded body."""
+    """One backend response: status plus decoded body.
+
+    `data` is the decoded JSON, or raw bytes for a binary download.
+    """
 
     status_code: int
     data: Any = None
+    headers: dict[str, str] | None = None
 
     @property
     def ok(self) -> bool:
@@ -67,8 +71,14 @@ class ApiClient:
         token: str | None = None,
         json: Any = None,
         params: dict[str, Any] | None = None,
+        files: Any = None,
+        raw: bool = False,
     ) -> ApiResult:
-        """Perform one request. Raises ApiError only when there is no answer."""
+        """Perform one request. Raises ApiError only when there is no answer.
+
+        `files` sends multipart/form-data; `raw` returns the response body as
+        bytes instead of decoded JSON (used for the Excel download).
+        """
         url = f"{self.base_url}/{path.lstrip('/')}"
         headers = {"Authorization": f"Bearer {token}"} if token else {}
 
@@ -79,16 +89,22 @@ class ApiClient:
                 headers=headers,
                 json=json,
                 params=params,
+                files=files,
                 timeout=self.timeout,
             )
         except requests.RequestException as exc:
             raise ApiError(f"Cannot reach the backend at {url}") from exc
 
+        response_headers = dict(response.headers)
+
         if response.status_code == 204 or not response.content:
-            return ApiResult(response.status_code)
+            return ApiResult(response.status_code, None, response_headers)
+
+        if raw and 200 <= response.status_code < 300:
+            return ApiResult(response.status_code, response.content, response_headers)
 
         try:
-            return ApiResult(response.status_code, response.json())
+            return ApiResult(response.status_code, response.json(), response_headers)
         except ValueError:
             raise ApiError(f"Backend returned a non-JSON response from {url}") from None
 
